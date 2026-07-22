@@ -1,0 +1,23 @@
+{
+  "title": "Q3 OKR progress",
+  "period": "2026年3季度",
+  "targetUser": "current user",
+  "updates": [
+    {
+      "krId": "kr-1",
+      "label": "O1 KR1",
+      "progress": 0,
+      "calculationBasis": "业务系统 Dashboard 只能作为辅助证据；该 KR 的严格结果口径需要结合当前周期槽位表重算。",
+      "note": "基于当前可见业务系统数据，关键事项已有阶段性推进；但 Dashboard 默认比例与 KR 承诺结果口径不完全一致，暂不把系统默认比例直接作为 OKR 完成率。",
+      "evidence": [
+        {
+          "summary": "业务系统脱敏快照",
+          "path": "outputs/evidence/business_dashboard_snapshot.svg"
+        }
+      ],
+      "risk": "缺少当前周期明细状态导出，严格结果口径待重算。",
+      "nextStep": "补充当前周期明细状态表后重算分子分母。",
+      "confidence": "medium"
+    }
+  ]
+}

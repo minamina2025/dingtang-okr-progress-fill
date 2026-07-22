@@ -1,0 +1,7 @@
+interface:
+  display_name: "Dingteam OKR Progress Fill"
+  short_description: "Fill OKR progress from verified evidence"
+  default_prompt: "Use $dingtang-okr-progress-fill to draft and validate my current Dingteam OKR progress from authorized work evidence."
+
+policy:
+  allow_implicit_invocation: true

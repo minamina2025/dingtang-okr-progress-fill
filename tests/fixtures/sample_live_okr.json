@@ -1,0 +1,16 @@
+{
+  "processed": {
+    "objectives": [
+      {
+        "objectiveId": "obj-1",
+        "title": "重点岗位招聘交付",
+        "keyResults": [
+          {
+            "keyResultId": "kr-1",
+            "title": "P0岗位招聘达成率≥70%，按入职计算"
+          }
+        ]
+      }
+    ]
+  }
+}

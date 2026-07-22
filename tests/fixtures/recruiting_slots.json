@@ -1,0 +1,21 @@
+[
+  {
+    "slotId": "slot-1",
+    "title": "重点岗位A",
+    "priority": "P0",
+    "status": "招聘中"
+  },
+  {
+    "slotId": "slot-2",
+    "title": "重点岗位B",
+    "priority": "P0",
+    "onboardQuarter": "2026年3季度"
+  },
+  {
+    "slotId": "slot-3",
+    "title": "重点岗位C",
+    "priority": "P0",
+    "offerQuarter": "2026年2季度",
+    "status": "招聘中"
+  }
+]
