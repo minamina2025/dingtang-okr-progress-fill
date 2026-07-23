@@ -56,3 +56,40 @@ Dingteam-visible progress notes must be readable by the user's manager.
 - For permissioned links, use named rich links instead of raw URLs. The visible text should be a document or evidence name, not a long URL.
 - If the API path can update percentages but cannot render images or named links, use verified UI automation for the comment/rich-text evidence section.
 - After writing, verify not only that the note text exists, but also that screenshots are visible and links render as named anchors.
+
+## Screenshot And Link Reliability
+
+Screenshot paste/upload and rich-link insertion can fail silently in Dingteam.
+Treat image and link presentation as separate writeback targets, not as part of
+plain text verification.
+
+For every screenshot evidence item:
+
+- Keep the local `path` only in the audit JSON.
+- Add a human-readable `display` / `label` / `title`.
+- Set `pasteIntoDingteam: true` when the plan expects UI paste/upload, or set
+  `uploaded` / `dingteamEmbedded` / `attachmentId` only after the image is
+  actually uploaded.
+- After saving the KR, reopen or refresh the KR and confirm that an image node
+  or attachment is visible in the manager-facing rich text. If it is missing,
+  retry once with the alternate path: upload button instead of clipboard paste,
+  or clipboard paste instead of upload button.
+- If the retry still fails, do not claim the screenshot is attached. Write
+  `待补内嵌截图` and report the failed KR and evidence label.
+
+For every link evidence item:
+
+- Add a human-readable `display` / `label` / `title`; it must not be a URL.
+- Insert the evidence as a rich link/anchor when the editor supports it.
+- After saving the KR, reopen or refresh and inspect that the visible title has
+  a real `href` or Dingteam link object. Text that merely looks like a title is
+  not enough.
+- If the editor strips the link, retry once through the editor's link command or
+  paste-as-rich-link path.
+- If the retry still fails, write `待补可读链接` and report the failed KR and
+  evidence label.
+
+Run `validate-presentation` before writeback and again on the post-write
+verification artifact. Warnings about unverified screenshot/link presentation
+mean the KR still needs visual verification before it can be reported as fully
+updated.

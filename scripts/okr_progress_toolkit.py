@@ -26,6 +26,7 @@ SENSITIVE_PATTERNS = [
 
 LOCAL_PATH_RE = re.compile(r"(^|\s)(/Users/|/tmp/|/private/tmp/|outputs/|file://)", re.IGNORECASE)
 RAW_URL_RE = re.compile(r"https?://[^\s)）>]+", re.IGNORECASE)
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 
 
 def load_json(path: str | Path) -> Any:
@@ -81,6 +82,44 @@ def _truthy(value: Any) -> bool:
     if isinstance(value, (int, float)):
         return value != 0
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "是", "在招", "招聘中"}
+
+
+def _looks_like_local_path(value: Any) -> bool:
+    return bool(LOCAL_PATH_RE.search(str(value or "")))
+
+
+def _looks_like_raw_url(value: Any) -> bool:
+    return bool(RAW_URL_RE.search(str(value or "")))
+
+
+def _display_text(evidence: dict[str, Any]) -> str:
+    return str(evidence.get("display") or evidence.get("label") or evidence.get("title") or "").strip()
+
+
+def _image_embed_planned_or_verified(evidence: dict[str, Any]) -> bool:
+    return any(
+        [
+            _truthy(evidence.get("embed")),
+            _truthy(evidence.get("embedded")),
+            _truthy(evidence.get("pasteIntoDingteam")),
+            _truthy(evidence.get("uploaded")),
+            _truthy(evidence.get("dingteamEmbedded")),
+            bool(evidence.get("attachmentId")),
+            bool(evidence.get("dingteamImageUrl")),
+        ]
+    )
+
+
+def _presentation_verified(evidence: dict[str, Any]) -> bool:
+    return any(
+        [
+            _truthy(evidence.get("postWriteVerified")),
+            _truthy(evidence.get("verifiedInDingteam")),
+            _truthy(evidence.get("dingteamLinkVerified")),
+            _truthy(evidence.get("dingteamImageVisible")),
+            str(evidence.get("presentationStatus") or "").strip().lower() == "verified",
+        ]
+    )
 
 
 def compute_recruiting_ratio(records: list[dict[str, Any]], period: str) -> dict[str, Any]:
@@ -246,20 +285,51 @@ def validate_presentation(plan: dict[str, Any]) -> dict[str, Any]:
         for ev_idx, evidence in enumerate(item.get("evidence") or [], 1):
             if not isinstance(evidence, dict):
                 continue
-            display = evidence.get("display") or evidence.get("label") or evidence.get("title")
+            display = _display_text(evidence)
             path = str(evidence.get("path") or "")
             url = str(evidence.get("url") or "")
-            embed = evidence.get("embed") or evidence.get("embedded") or evidence.get("pasteIntoDingteam")
-            if path and LOCAL_PATH_RE.search(path) and not embed:
-                errors.append(
-                    f"{label} evidence[{ev_idx}] uses local path without embed/pasteIntoDingteam=true"
-                )
-            if url and not display:
-                warnings.append(f"{label} evidence[{ev_idx}] has url but no display/label/title for named rich link")
-            if path and not display:
-                warnings.append(f"{label} evidence[{ev_idx}] has path but no display/label/title for image caption")
+            if display and (_looks_like_local_path(display) or _looks_like_raw_url(display)):
+                errors.append(f"{label} evidence[{ev_idx}] display/label/title must be a readable title, not a path or URL")
+            if path and LOCAL_PATH_RE.search(path):
+                suffix = Path(path.split("?", 1)[0].split("#", 1)[0]).suffix.lower()
+                if suffix and suffix not in IMAGE_EXTENSIONS:
+                    warnings.append(f"{label} evidence[{ev_idx}] local path does not look like a supported image file")
+                if not _image_embed_planned_or_verified(evidence):
+                    errors.append(
+                        f"{label} evidence[{ev_idx}] uses local path without embed/pasteIntoDingteam/uploaded evidence"
+                    )
+                if not display:
+                    errors.append(f"{label} evidence[{ev_idx}] local image evidence needs display/label/title")
+                elif _image_embed_planned_or_verified(evidence) and not _presentation_verified(evidence):
+                    warnings.append(
+                        f"{label} evidence[{ev_idx}] image is only planned for paste/upload; verify it renders after writeback"
+                    )
+            if url:
+                if not display:
+                    errors.append(f"{label} evidence[{ev_idx}] url needs display/label/title for named rich link")
+                elif not _presentation_verified(evidence):
+                    warnings.append(f"{label} evidence[{ev_idx}] link title is planned; verify href after writeback")
 
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _render_evidence_pointer(evidence: dict[str, Any]) -> str:
+    display = _display_text(evidence)
+    summary = evidence.get("summary") or evidence.get("type") or "证据"
+    path = str(evidence.get("path") or "")
+    url = str(evidence.get("url") or "")
+    if path and _looks_like_local_path(path):
+        if display and _image_embed_planned_or_verified(evidence):
+            return f"- {summary}: {display}（写回时内嵌图片）"
+        return f"- {summary}: 待补内嵌截图"
+    if url:
+        if display:
+            return f"- {summary}: [{display}]({url})"
+        return f"- {summary}: 待补可读链接"
+    pointer = evidence.get("source") or display or "待补链接/截图"
+    if _looks_like_local_path(pointer) or _looks_like_raw_url(pointer):
+        return f"- {summary}: 待补可读链接/截图"
+    return f"- {summary}: {pointer}"
 
 
 def render_markdown(plan: dict[str, Any], okr: dict[str, Any] | None = None) -> str:
@@ -296,9 +366,7 @@ def render_markdown(plan: dict[str, Any], okr: dict[str, Any] | None = None) -> 
         evidence = item.get("evidence") or []
         if evidence:
             for ev in evidence:
-                summary = ev.get("summary") or ev.get("type") or "证据"
-                pointer = ev.get("url") or ev.get("path") or ev.get("source") or "待补链接/截图"
-                lines.append(f"- {summary}: {pointer}")
+                lines.append(_render_evidence_pointer(ev))
         else:
             lines.append("- 待补链接/截图")
         risk = item.get("risk")
