@@ -39,6 +39,50 @@ python3 scripts/dingteam_progress_writeback.py --plan plan.json --okr live_okr.j
 
 Proceed only when validation passes and the user has approved the exact plan.
 
+## Write Capability Diagnosis
+
+Do not treat a visible editor, editable percentage field, or enabled submit
+button as proof that the user has write permission. Dingteam can expose UI
+controls while the save request is rejected, routed to a draft path, or silently
+ignored by the current page state.
+
+Before any batch writeback, classify capability in this order:
+
+1. `read_ok`: the target period, objective ids, and KR ids can be read from the
+   live Dingteam source.
+2. `ui_editable`: the progress/comment editor can be opened.
+3. `save_request_observed`: submitting one minimal KR update produces an
+   observable Dingteam save request and response.
+4. `backend_verified`: after reload/refetch, the same KR shows the expected
+   progress and note/comment in Dingteam data.
+5. `presentation_verified`: requested screenshots and rich links render in the
+   manager-facing view.
+
+Only `backend_verified` counts as a successful KR write. `ui_editable` alone is
+not enough.
+
+Use a fail-fast probe:
+
+- Try only one minimal write on the first target KR, preferably a no-op update
+  or the smallest user-approved change.
+- Capture request path, HTTP status, response `code`/`msg`/`traceId`, and the
+  post-save verification result. Do not print tokens, cookies, or auth headers.
+- If no save request is observed, or the response is missing/unsuccessful, stop
+  immediately and report `保存请求不可观测或失败`.
+- If the response says success but reload/refetch still shows the old value,
+  stop immediately and report `保存后端复核失败`.
+- Do not repeat the same long UI workflow across many KR. At most retry the
+  same write path once after refreshing the page. Then switch to another
+  verified write path or stop.
+- Keep diagnostic time bounded. If the first target KR cannot be verified within
+  a few minutes, stop and report the suspected class: auth/session expired,
+  missing write permission, wrong save endpoint, draft/staging endpoint, or UI
+  state mismatch.
+
+If progress writeback is unavailable but objective-level comments are verified,
+ask the user whether to write a clearly labeled comment-only progress summary.
+Do not claim KR progress or KR notes were updated in that fallback.
+
 ## Write Path Order
 
 1. Official or tenant-supported OKR write command, if available.
