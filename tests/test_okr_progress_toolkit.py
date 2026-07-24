@@ -41,7 +41,16 @@ def test_recruiting_ratio_excludes_previous_quarter_and_counts_onboarded():
 def test_validate_plan_checks_ids_progress_and_note():
     module = load_module()
     okr = {"processed": {"objectives": [{"keyResults": [{"keyResultId": "kr-1"}]}]}}
-    good = {"updates": [{"krId": "kr-1", "progress": 20, "note": "已完成阶段推进", "evidence": []}]}
+    good = {
+        "updates": [
+            {
+                "krId": "kr-1",
+                "progress": 20,
+                "note": "已完成阶段推进",
+                "evidence": [{"type": "process", "summary": "项目评审已完成"}],
+            }
+        ]
+    }
     assert module.validate_plan(good, okr)["ok"]
     bad = {"updates": [{"krId": "kr-x", "progress": 120, "note": ""}]}
     result = module.validate_plan(bad, okr)
@@ -181,3 +190,41 @@ def test_render_markdown_uses_named_link_and_image_caption():
     assert "/Users/example/local.png" not in out
     assert "业务系统Dashboard脱敏快照（写回时内嵌图片）" in out
     assert "[Q3 OKR文档](https://alidocs.dingtalk.com/example)" in out
+
+
+def test_validate_plan_rejects_time_elapsed_progress_without_evidence():
+    module = load_module()
+    plan = {
+        "updates": [
+            {
+                "krId": "kr-1",
+                "label": "O1 KR1",
+                "progress": 33,
+                "calculationBasis": "Q3 已过去约 1/3，因此按时间进度估算为 33%",
+                "note": "当前季度已经过去约三分之一，暂按 33% 填写。",
+                "evidence": [{"type": "gap", "summary": "暂未找到实际进展证据"}],
+            }
+        ]
+    }
+    result = module.validate_plan(plan)
+    assert not result["ok"]
+    assert any("time elapsed" in item for item in result["errors"])
+    assert any("positive progress without actual evidence" in item for item in result["errors"])
+
+
+def test_validate_plan_allows_zero_progress_with_no_evidence_note():
+    module = load_module()
+    plan = {
+        "updates": [
+            {
+                "krId": "kr-1",
+                "label": "O1 KR1",
+                "progress": 0,
+                "calculationBasis": "未找到本周期实际证据，不按时间进度折算。",
+                "note": "暂时没有证据进展，待下轮更新",
+                "evidence": [{"type": "gap", "summary": "证据缺口：待补业务系统记录"}],
+            }
+        ]
+    }
+    result = module.validate_plan(plan)
+    assert result["ok"]

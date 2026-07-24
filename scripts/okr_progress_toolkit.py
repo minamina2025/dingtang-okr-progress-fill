@@ -27,6 +27,14 @@ SENSITIVE_PATTERNS = [
 LOCAL_PATH_RE = re.compile(r"(^|\s)(/Users/|/tmp/|/private/tmp/|outputs/|file://)", re.IGNORECASE)
 RAW_URL_RE = re.compile(r"https?://[^\s)）>]+", re.IGNORECASE)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+NO_EVIDENCE_NOTE = "暂时没有证据进展，待下轮更新"
+TIME_ONLY_PROGRESS_RE = re.compile(
+    r"(时间进度|日历进度|自然时间|按[^。；;\n]{0,20}时间|季度[^。；;\n]{0,20}(过去|已过)|"
+    r"(过去|已过)[^。；;\n]{0,20}%|elapsed|time[- ]?based)",
+    re.IGNORECASE,
+)
+GAP_EVIDENCE_TYPES = {"gap", "risk", "missing", "缺口", "风险", "无证据"}
+SUBSTANTIVE_EVIDENCE_TYPES = {"result", "metric", "process", "artifact", "milestone", "delivery", "结果", "指标", "过程", "产物", "里程碑"}
 
 
 def load_json(path: str | Path) -> Any:
@@ -120,6 +128,29 @@ def _presentation_verified(evidence: dict[str, Any]) -> bool:
             str(evidence.get("presentationStatus") or "").strip().lower() == "verified",
         ]
     )
+
+
+def _evidence_type(evidence: dict[str, Any]) -> str:
+    return str(evidence.get("type") or evidence.get("category") or evidence.get("kind") or "").strip().lower()
+
+
+def _has_substantive_evidence(evidence: Any) -> bool:
+    if not isinstance(evidence, list):
+        return False
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        kind = _evidence_type(item)
+        summary = str(item.get("summary") or item.get("source") or "").strip()
+        if kind in GAP_EVIDENCE_TYPES:
+            continue
+        if re.search(r"(暂无|没有|未找到|缺少|待补).{0,12}证据|证据缺口", summary):
+            continue
+        if kind in SUBSTANTIVE_EVIDENCE_TYPES:
+            return True
+        if item.get("url") or item.get("path") or item.get("source") or summary:
+            return True
+    return False
 
 
 def compute_recruiting_ratio(records: list[dict[str, Any]], period: str) -> dict[str, Any]:
@@ -252,6 +283,24 @@ def validate_plan(plan: dict[str, Any], okr: dict[str, Any] | None = None) -> di
                 continue
             if not evidence_item.get("summary") and not evidence_item.get("url") and not evidence_item.get("path"):
                 warnings.append(f"{kr_id} evidence[{ev_idx}] lacks summary/url/path")
+
+        has_evidence = _has_substantive_evidence(evidence)
+        progress_value = progress if isinstance(progress, (int, float)) and not isinstance(progress, bool) else None
+        calculation_basis = sanitize_text(item.get("calculationBasis"))
+        rationale_text = "\n".join([note, calculation_basis, sanitize_text(item.get("risk")), sanitize_text(item.get("nextStep"))])
+        if TIME_ONLY_PROGRESS_RE.search(rationale_text) and not has_evidence and progress_value is not None and progress_value > 0:
+            errors.append(
+                f"{kr_id or 'updates[' + str(idx) + ']'} uses time elapsed as progress without actual evidence"
+            )
+        if not has_evidence:
+            if progress_value is not None and progress_value > 0:
+                errors.append(
+                    f"{kr_id or 'updates[' + str(idx) + ']'} has positive progress without actual evidence; keep progress unchanged/0"
+                )
+            if NO_EVIDENCE_NOTE not in note:
+                errors.append(
+                    f"{kr_id or 'updates[' + str(idx) + ']'} has no actual evidence; note must include '{NO_EVIDENCE_NOTE}'"
+                )
 
     return {"ok": not errors, "errors": errors, "warnings": warnings}
 
